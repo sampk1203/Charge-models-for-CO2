@@ -1,0 +1,18 @@
+# avogadro generated ORCA file
+# CO2 | Geometry Optimization | B3LYP/6-31G(d)
+# 
+! Opt B3LYP 6-311++G(d,p) 
+
+%maxcore 2048
+
+%pal
+   nprocs 8
+end
+
+* xyz 0 1
+   C     -3.975483    1.838988    0.000003
+   O     -5.171543    1.865292    0.000002
+   O     -2.779415    1.812714    0.000005
+*
+
+

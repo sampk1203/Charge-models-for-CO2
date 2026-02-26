@@ -1,0 +1,4 @@
+# units: kJ/mol, A, deg
+# type   m_D/u   q_D/e    k_D     alpha/A3   thole
+C       0.2     -0.4     0.0      1.50       2.6
+O       0.2      0.4     0.0      0.80       2.6

@@ -1,0 +1,95 @@
+units metal
+dimension 3
+boundary p p p
+atom_style full
+
+# Read the atomic configuration
+read_data CO2_atm.data
+
+# Charge setup — constant charges (no Drude)
+set type 1 charge 0.75957    # C core only
+set type 2 charge -0.379785  # O core only
+
+# Define bond style and bond coefficients
+bond_style morse
+bond_coeff 1 11.45937 2.0 1.1607    # Morse bond for C–O
+
+# Define angle style and angle coefficients
+angle_style harmonic
+angle_coeff 1 2.2 180.0   # O–C–O angle
+
+# Define pair style: Buckingham + long-range Coulomb
+pair_style buck/coul/long 12.0
+pair_modify tail yes
+kspace_style pppm 1.0e-4
+
+# Core-core Buckingham + Coulomb interactions
+pair_coeff 1 1 20.33851015631 0.37501155251736 0     # C–C
+pair_coeff 2 2 40.92922908874 0.269706714197472 0    # O–O
+pair_coeff 1 2 24.27911541566 0.269706714197472 0    # C–O
+
+# Special bonds (unchanged)
+special_bonds lj/coul 0.0 0.0 0.5
+
+# Neighbor settings
+neighbor 15.0 bin
+neigh_modify delay 0 every 1 check yes
+
+# Groups — only cores exist now
+group cores type 1 2
+
+# Communication settings
+comm_modify vel yes
+
+# Minimization
+min_style cg
+minimize 1.0e-10 1.0e-10 1000 10000
+
+# Thermo output
+variable out_freq equal 100
+thermo_style custom step cpu etotal temp press vol
+thermo ${out_freq}
+thermo_modify flush yes
+
+# Compute temperature/pressure
+compute myTemp all temp
+compute myPress all pressure myTemp
+
+# Initial velocities — add rotational degrees of freedom
+velocity cores create 300.0 4928459 rot yes dist gaussian
+
+# Timestep
+timestep 0.0005  # faster possible without Drude
+reset_timestep 0
+
+# IR Spectrum Calculation (dipole from charges)
+compute dipole all property/atom q xu yu zu
+variable dipolex atom c_dipole[1]*c_dipole[2]
+variable dipoley atom c_dipole[1]*c_dipole[3]
+variable dipolez atom c_dipole[1]*c_dipole[4]
+compute dxtot all reduce sum v_dipolex
+compute dytot all reduce sum v_dipoley
+compute dztot all reduce sum v_dipolez
+
+variable totaldipolex equal c_dxtot
+variable totaldipoley equal c_dytot
+variable totaldipolez equal c_dztot
+
+# Time variable
+variable mytime equal step*dt
+
+# Dipole output
+fix printdipole all print 1 "${mytime} ${totaldipolex} ${totaldipoley} ${totaldipolez}" title "" file dipole_stat.txt screen no
+
+# Trajectory dump
+dump 1 all custom 100 dump.co2.stat.lammpstrj id type x y z q
+
+# Momentum fix
+fix fMOMENTUM all momentum 100 linear 1 1 1
+
+# Thermostat (regular NVT)
+fix NVT all nvt temp 300.0 300.0 0.5
+
+# Main run
+run 100000
+

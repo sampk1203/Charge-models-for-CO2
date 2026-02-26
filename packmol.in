@@ -1,0 +1,9 @@
+tolerance 2.0
+filetype xyz
+output simbox.xyz
+
+structure CO2.xyz
+number 26
+inside box 0 0 0 50 50 450 
+end structure
+

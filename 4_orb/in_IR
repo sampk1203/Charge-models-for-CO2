@@ -1,0 +1,58 @@
+units metal
+dimension 3
+boundary p p p
+atom_style full
+
+read_data CO2_atm.data
+
+bond_style zero
+bond_coeff 1
+
+pair_style  gnnp/gpu gnnp_driver.py
+pair_coeff  * *  orb orb-v3-conservative-inf-omat C O
+
+# Neighbor
+neighbor 15.0 bin
+neigh_modify delay 0 every 1 check yes
+
+# Groups
+group CO2 type 1 2
+
+# Minimization (optional)
+min_style cg
+minimize 1.0e-10 1.0e-10 1000 10000
+
+# Velocity with rotation
+velocity CO2 create 300.0 4928459 rot yes mom yes dist gaussian
+
+# NVT thermostat
+timestep 0.0005
+fix NVT CO2 nvt temp 300.0 300.0 0.5
+
+# --- Dipole vector calculation using bond vectors ---
+# Get bond vectors: bond/local
+compute B all bond/local dist dx dy dz
+
+# Reduce dipole components: sum of C–O bond vectors
+compute DXTOT all reduce sum c_B[2]
+compute DYTOT all reduce sum c_B[3]
+compute DZTOT all reduce sum c_B[4]
+
+# Variables for printing
+variable dipx equal c_DXTOT
+variable dipy equal c_DYTOT
+variable dipz equal c_DZTOT
+variable mytime equal step*dt
+
+# Output dipole vector vs time
+fix printDIPOLE all print 1 """$(v_mytime)  $(v_dipx)  $(v_dipy)  $(v_dipz) """ file dipole_orb.txt screen no
+
+# Thermo
+thermo_style custom step temp etotal press vol
+thermo 100
+
+# Dump
+dump 1 all custom 100 dump.orb.lammpstrj id type x y z
+
+# Run
+run 100000

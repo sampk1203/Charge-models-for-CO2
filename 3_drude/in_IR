@@ -1,0 +1,111 @@
+units metal
+dimension 3
+boundary p p p
+atom_style full
+
+# Read the atomic configuration
+read_data CO2_atm2.data
+
+# Charge setup (YOUR VALUES)
+set type 1 charge 1.15957    # C core (+0.75957 - (-0.4))
+set type 2 charge -0.779785  # O core (-0.379785 - 0.4)
+set type 3 charge -0.4       # C Drude
+set type 4 charge 0.4        # O Drude
+
+# Define bond style and bond coefficients
+bond_style hybrid morse harmonic
+bond_coeff 1 morse 11.45937 2.0 1.1607    # Morse bond for C–O
+bond_coeff 2 harmonic 1.02265625 0.00         # Harmonic bond for C–Drude
+bond_coeff 3 harmonic 2.24984375 0.00         # Harmonic bond for O–Drude
+
+# Define angle style and angle coefficients
+angle_style harmonic
+angle_coeff 1 2.2 180.0   # O–C–O angle
+
+# Define pair style: combine Buckingham, Drude spring, and Thole damping
+pair_style hybrid/overlay buck/coul/long 12.0 thole 2.6 12.0 coul/long/cs 12.0
+pair_modify tail yes
+kspace_style pppm 1.0e-4  # Use the CS-compatible Kspace solver
+
+# Core-core Buckingham + Coulomb interactions
+pair_coeff 1 1 buck/coul/long 20.33851015631 0.37501155251736 0     # C–C
+pair_coeff 2 2 buck/coul/long 40.92922908874 0.269706714197472 0     # O–O
+pair_coeff 1 2 buck/coul/long 24.27911541566 0.269706714197472 0     # C–O
+
+# Drude spring electrostatics using coul/long/cs (Drude-core and Drude-Drude)
+pair_coeff * 3 coul/long/cs
+pair_coeff * 4 coul/long/cs
+
+# Thole damping for polarization
+pair_coeff    1    1 thole   1.500
+pair_coeff    1    2 thole   1.095
+pair_coeff    1    3 thole   1.500
+pair_coeff    1    4 thole   1.095
+pair_coeff    2    2 thole   0.800
+pair_coeff    2    3 thole   1.095
+pair_coeff    2    4 thole   0.800
+pair_coeff    3    3 thole   1.500
+pair_coeff    3    4 thole   1.095
+pair_coeff    4    4 thole   0.800
+
+# Special bonds settings (Coulomb interactions for cores and Drude particles)
+special_bonds lj/coul 0.0 0.0 0.5
+
+neighbor        15.0 bin
+neigh_modify delay 0 every 1 check yes
+
+
+# Define groups for core and Drude particles
+group cores type 1 2      # Core atoms (C and O)
+group drudes type 3 4     # Drude particles
+
+# Apply the Drude oscillator model
+fix DRUDE all drude 1 1 2 2
+compute TDRUDE all temp/drude
+compute TCOM cores temp/com
+
+comm_modify vel yes
+
+# Minimization and initial equilibration
+min_style cg
+minimize 1.0e-10 1.0e-10 1000 10000
+
+variable out_freq equal 100
+thermo_style custom step cpu etotal temp  press vol c_TDRUDE[1] c_TDRUDE[2] c_TCOM
+thermo 50
+thermo_modify flush yes
+thermo ${out_freq}
+
+# Thermodynamic output
+compute myTemp all temp
+compute myPress all pressure myTemp
+
+velocity cores create 300.0 4928459
+velocity drudes create 1.0 4928459
+
+
+timestep 0.0001
+reset_timestep 0
+
+# IR Spectrum Calculation (using Drude dipole moment)
+compute 1 all property/atom q xu yu zu
+variable dipolex atom c_1[1]*c_1[2]
+variable dipoley atom c_1[1]*c_1[3]
+variable dipolez atom c_1[1]*c_1[4]
+compute dxtot all reduce sum v_dipolex
+compute dytot all reduce sum v_dipoley
+compute dztot all reduce sum v_dipolez
+variable totaldipolex equal c_dxtot
+variable totaldipoley equal c_dytot
+variable totaldipolez equal c_dztot
+
+# Print dipole moment components with proper formatting
+variable mytime equal step*dt
+fix printdipole all print 1 """$(v_mytime)  $(v_totaldipolex)  $(v_totaldipoley)  $(v_totaldipolez) """ title "" file dipole.txt screen no
+
+# Output configurations and data
+dump 1 all custom 100 dump.co2.drude.lammpstrj id type x y z q
+
+#fix fMOMENTUM all momentum 100 linear 1 1 1
+fix tgnvt all tgnvt/drude temp 300.0 300.0 $(100.0*dt) 1.0 $(20.0*dt)
+run 72000

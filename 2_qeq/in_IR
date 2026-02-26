@@ -1,0 +1,91 @@
+units metal
+dimension 3
+boundary p p p
+atom_style full
+
+read_data CO2_atm.data
+
+# Force fields with your Buckingham parameters (A in eV, ρ in Å⁻¹, C=0)
+pair_style      buck/coul/long 14.0
+pair_modify     tail yes
+kspace_style    ewald 1.0e-4
+
+# Buckingham coefficients (A, ρ, C=0)
+pair_coeff 2 2 40.92922908874  0.269706714197472 0  # O-O
+pair_coeff 1 1 20.33851015631 0.37501155251736 0 # C-C
+pair_coeff 1 2 24.27911541566 0.269706714197472 0 # C-O
+
+
+# Morse bond for CO₂ (keep your original values)
+bond_style      morse
+bond_coeff      1 11.45937 2 1.1607    # C-O bond
+
+# Harmonic angle for CO₂ (linear)
+angle_style     harmonic
+angle_coeff     1 2.2 180.0              # O-C-O angle
+
+# Initial charges (QEq will override these)
+set            type 2 charge -0.379785        # O
+set            type 1 charge 0.75957          # C
+
+special_bonds lj/coul 0.0 0.0 0.5
+
+fix 1 all qeq/shielded 1 1 1.0e-6 200 qeq.file3.txt
+
+# Neighbor settings
+neighbor        15.0 bin
+neigh_modify    delay 0 every 1 check yes
+# ---------------------------------------------------------------
+# Initial minimization and equilibration
+min_style cg
+minimize 1.0e-10 1.0e-10 1000 10000
+velocity all create 300.0 4928459 rot yes dist gaussian
+
+#---------------------------------------------------------------
+# Compute temperature and pressure
+compute myTemp all temp
+compute myPress all pressure myTemp
+
+# Set output frequency (must match for thermo and fixes)
+variable out_freq equal 100
+
+# CUMULATIVE AVERAGING (strictly cumulative, updates every out_freq steps)
+fix ave_temp all ave/time 1 ${out_freq} ${out_freq} c_myTemp ave running
+fix ave_press all ave/time 1 ${out_freq} ${out_freq} c_myPress ave running
+
+# Thermodynamic output (now includes cumulative averages)
+thermo_style custom step temp press f_ave_temp f_ave_press vol density 
+thermo_modify flush yes
+thermo ${out_freq}
+
+# Equilibration in NVT
+fix nvt_equil all nvt temp 300.0 300.0 100.0
+timestep 0.0005
+#run 200000
+unfix ave_temp
+unfix ave_press
+reset_timestep 0
+# ---------------------------------------------------------------
+# IR Spectrum Calculation
+# WARNING: System must have 0 net charge for dipole calculation
+compute 1 all property/atom q xu yu zu
+variable dipolex atom c_1[1]*c_1[2]
+variable dipoley atom c_1[1]*c_1[3]
+variable dipolez atom c_1[1]*c_1[4]
+compute dxtot all reduce sum v_dipolex
+compute dytot all reduce sum v_dipoley
+compute dztot all reduce sum v_dipolez
+variable totaldipolex equal c_dxtot
+variable totaldipoley equal c_dytot
+variable totaldipolez equal c_dztot
+# Print dipole moment components with proper formatting
+variable mytime equal step*dt
+#fix printdipole all ave/time 1 1 2 v_mytime v_totaldipolex v_totaldipoley v_totaldipolez file dipole_qeq.txt mode scalar format %.10f
+#fix printdipole all print 1 v_mytime v_totaldipolex v_totaldipoley v_totaldipolez file dipole.txt mode scalar format "%.3f %10.10f %10.10f %10.10f" timestep no
+fix printdipole all print 1 """$(v_mytime)  $(v_totaldipolex)  $(v_totaldipoley)  $(v_totaldipolez) """ title "" file dipole_qeq.txt screen no
+
+reset_timestep 0
+dump 1 all custom 100 dump.co2.qeq.lammpstrj id type x y z q
+thermo_style custom step temp press
+run 200000
+
